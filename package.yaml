@@ -24,6 +24,8 @@ dependencies:
 - clock
 - mtl
 - postgresql-simple
+- postgresql-simple-migration
+- safe-exceptions
 - stm
 - text
 
@@ -58,4 +60,5 @@ tests:
     - process
     - QuickCheck
     - unix
+    - typed-process
     - warp

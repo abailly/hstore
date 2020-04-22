@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module HStore.PostgresOpsSpec
@@ -10,6 +11,7 @@ module HStore.PostgresOpsSpec
   )
 where
 
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
 import Control.Exception (bracket)
 import Control.Monad.Trans (MonadIO)
@@ -26,10 +28,12 @@ import HStore.PostgresOps
 import qualified Network.Socket as Network
 import Network.Wai.Handler.Warp as Warp
 import System.Directory
+import System.Exit
 import System.FilePath ((</>))
 import System.IO (hClose)
 import System.Posix.Temp (mkstemp)
 import System.Process (callCommand)
+import System.Process.Typed
 import Test.Hspec
 import Test.QuickCheck as Q
 import Test.QuickCheck.Monadic as Q
@@ -87,11 +91,25 @@ temporaryStorage = bracket startPostgres stopPostgres
       (freePort, sock) <- openFreePort
       Network.close sock
       let name = "postgres-" <> show freePort
-      callCommand $ "docker run -d  -e POSTGRES_HOST_AUTH_METHOD=trust --name " <> name <> " -p " <> show freePort <> ":5432 postgres:9.6"
-      pure $ defaultOptions {dbPort = freePort}
+      let pgOptions = defaultOptions {dbPort = freePort}
+      callCommand $ "docker run -d  -e POSTGRES_HOST_AUTH_METHOD=trust --name " <> name <> " -p " <> show freePort <> ":5432 postgres:9.6 postgres -c log_statement=all"
+      ready <- waitForPostgresReady name 30
+      if not ready
+        then pure $ pgOptions
+        else do
+          createDatabase (pgOptions {dbUser = "postgres", dbPassword = "", dbName = "postgres"}) "hstore" "hstore" ""
+          migrateDatabase pgOptions >>= print
+          pure $ pgOptions
     stopPostgres PGStorageOptions {dbPort} = do
       let name = "postgres-" <> show dbPort
-      callCommand $ "docker rm -f " <> name
+      callCommand $ "docker kill " <> name
+      pure ()
+    waitForPostgresReady name 0 = pure False
+    waitForPostgresReady name n =
+      runProcess (proc "docker" ["exec", "-t", name, "pg_isready"])
+        >>= \case
+          ExitSuccess -> pure True
+          ExitFailure _ -> threadDelay 1000000 >> waitForPostgresReady name (n -1)
 
 spec :: Spec
 spec = around temporaryStorage $ describe "Postgres Storage" $ do
