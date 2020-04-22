@@ -10,18 +10,13 @@ module HStore
   )
 where
 
-import Data.ByteString (ByteString)
-import Data.Int
-import Data.Serialize
-import Data.Text (Text)
-import Data.Text.Encoding
-import GHC.Generics
 import HStore.Events
+import Data.Aeson(ToJSON, FromJSON)
 
 class Store m store where
   close :: store -> m store
   store ::
-    (Versionable event) =>
+    (Versionable event, ToJSON event) =>
     -- | Storage Engine
     store ->
     -- | Pre-treatment action that returns something to serialize or an error that is passed down to post
@@ -30,7 +25,7 @@ class Store m store where
     -- | Post-treatment action that provides some result out of storage result or error in pre-treatment
     (Either error (StorageResult event) -> m result) ->
     m (StorageResult result)
-  load :: (Versionable event) => store -> m (StorageResult event)
+  load :: (Versionable event, FromJSON event) => store -> m (StorageResult event)
   reset :: store -> m (StorageResult ())
 
 -- | Result of storage operations.

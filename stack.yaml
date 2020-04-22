@@ -3,3 +3,4 @@ packages:
 resolver: lts-15.6
 extra-deps:
 - postgresql-simple-migration-0.1.15.0@sha256:0e24e96908430f5caf9c1c1d9ca7c5c108e4e0409a255e2cbd77e8cd252dbb02,3879
+- binary-instances-1.0.0.1@sha256:70c5759ab4f09cf661f68b72b3543872bc32b61095159d2bfcda8d71dce29b7e,2637

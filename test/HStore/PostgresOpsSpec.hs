@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
@@ -11,28 +12,20 @@ module HStore.PostgresOpsSpec
   )
 where
 
+import Data.Aeson(ToJSON, FromJSON)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
 import Control.Exception (bracket)
 import Control.Monad.Trans (MonadIO)
 import Data.Either
-import Data.Either
 import Data.Functor
-import Data.IORef
-import Data.Serialize
+import Data.Binary
 import Data.Text (Text, pack)
-import GHC.Generics
 import HStore
-import HStore.Events
 import HStore.PostgresOps
 import qualified Network.Socket as Network
 import Network.Wai.Handler.Warp as Warp
-import System.Directory
 import System.Exit
-import System.FilePath ((</>))
-import System.IO (hClose)
-import System.Posix.Temp (mkstemp)
-import System.Process (callCommand)
 import System.Process.Typed
 import Test.Hspec
 import Test.QuickCheck as Q
@@ -45,8 +38,11 @@ newtype Add = Add Int
 instance Arbitrary Add where
   arbitrary = Add <$> choose (1, 100)
 
-data Added = Added Int
-  deriving (Eq, Show, Generic, Serialize, Versionable)
+newtype Added = Added Int
+  deriving stock (Eq, Show)
+  deriving newtype (Binary, ToJSON, FromJSON)
+
+instance Versionable Added
 
 mkEvent ::
   Applicative m => Add -> m (Either () Added)
@@ -68,12 +64,12 @@ storeAdd ::
 storeAdd st a =
   store st (mkEvent a) mkResult
     >>= \case
-      WriteSucceed (Stored a) -> pure $ Right a
+      WriteSucceed (Stored a') -> pure $ Right a'
       err -> pure $ Left $ pack $ show err
 
 prop_persistentStateSerializesConcurrentWrites :: PGStorageOptions -> [[Add]] -> Property
 prop_persistentStateSerializesConcurrentWrites storageOpts commands = collect (length commands) $ monadicIO $ do
-  Right (errs, evs) <- Q.run $ withPostgresStorage storageOpts $ \st -> do
+  Right (_, evs) <- Q.run $ withPostgresStorage storageOpts $ \st -> do
     void $ reset st
     evs <- partitionEithers . concat <$> mapConcurrently (mapM (storeAdd st)) commands
     return evs
@@ -85,26 +81,42 @@ prop_persistentStateSerializesConcurrentWrites storageOpts commands = collect (l
   -- returned to this test thread in different orders
   assert $ all (`elem` evs') evs && all (`elem` evs) evs'
 
-temporaryStorage = bracket startPostgres stopPostgres
+withPGDatabase ::
+  (PGStorageOptions -> IO c) -> IO c
+withPGDatabase = bracket startPostgres stopPostgres
   where
     startPostgres = do
       (freePort, sock) <- openFreePort
       Network.close sock
       let name = "postgres-" <> show freePort
       let pgOptions = defaultOptions {dbPort = freePort}
-      callCommand $ "docker run -d  -e POSTGRES_HOST_AUTH_METHOD=trust --name " <> name <> " -p " <> show freePort <> ":5432 postgres:9.6 postgres -c log_statement=all"
+      runProcess_ $
+        proc
+          "docker"
+          [ "run",
+            "-d",
+            "-e",
+            "POSTGRES_HOST_AUTH_METHOD=trust",
+            "--name",
+            name,
+            "-p",
+            show freePort <> ":5432",
+            "postgres:9.6"
+          ]
       ready <- waitForPostgresReady name 30
       if not ready
         then pure $ pgOptions
         else do
-          createDatabase (pgOptions {dbUser = "postgres", dbPassword = "", dbName = "postgres"}) "hstore" "hstore" ""
+          createDatabase (pgOptions {dbUser = "postgres", dbPassword = "", dbName = "postgres"}) "hstore" "hstore" "" >>= print
           migrateDatabase pgOptions >>= print
           pure $ pgOptions
     stopPostgres PGStorageOptions {dbPort} = do
       let name = "postgres-" <> show dbPort
-      callCommand $ "docker kill " <> name
+      runProcess_ $ proc "docker" ["kill", name]
       pure ()
-    waitForPostgresReady name 0 = pure False
+    waitForPostgresReady ::
+      String -> Int -> IO Bool
+    waitForPostgresReady _ 0 = pure False
     waitForPostgresReady name n =
       runProcess (proc "docker" ["exec", "-t", name, "pg_isready"])
         >>= \case
@@ -112,6 +124,6 @@ temporaryStorage = bracket startPostgres stopPostgres
           ExitFailure _ -> threadDelay 1000000 >> waitForPostgresReady name (n -1)
 
 spec :: Spec
-spec = around temporaryStorage $ describe "Postgres Storage" $ do
+spec = around withPGDatabase $ describe "Postgres Storage" $ do
   it "should serialize concurrent writes to postgres store" $
     \storageOpts -> property (prop_persistentStateSerializesConcurrentWrites storageOpts)

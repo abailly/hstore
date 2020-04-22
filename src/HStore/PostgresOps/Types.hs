@@ -7,7 +7,8 @@ import HStore
 data PostgresStorage
   = PostgresStorage
       { dbConnectInfo :: ConnectInfo,
-        dbConnection :: Maybe Connection
+        dbConnection :: Maybe Connection,
+        dbVersion :: Version
       }
 
 -- | Options for opening storage

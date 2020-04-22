@@ -14,7 +14,6 @@ import Data.ByteString.Lazy (fromStrict)
 import Data.Either
 import Data.Functor (void)
 import Data.Int
-import Data.Monoid ((<>))
 import Data.Serialize
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)

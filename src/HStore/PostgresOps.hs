@@ -1,5 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 -- | Low-level file storage engine
 module HStore.PostgresOps
@@ -13,42 +15,38 @@ module HStore.PostgresOps
   )
 where
 
-import Control.Concurrent.Async
-import Control.Concurrent.STM
-import Control.Exception (Exception, IOException, bracket, catch)
-import Control.Monad (forever)
-import Control.Monad.Trans (liftIO)
+import Control.Exception.Safe (MonadCatch, bracket, catchAny)
 import Control.Monad.Trans (MonadIO (..))
-import qualified Data.Binary.Get as Bin
-import Data.ByteString (hGet, hPut)
-import Data.ByteString.Lazy (fromStrict)
+import Data.Aeson (ToJSON (..))
 import Data.Either
+import qualified Data.ByteString.Base16 as Hex
 import Data.Functor (void)
-import Data.Monoid ((<>))
-import Data.Serialize
-import Data.Typeable
+import Data.Time.Clock
 import Database.PostgreSQL.Simple as PG
-import GHC.Natural
+import Database.PostgreSQL.Simple.ToRow
+import Database.PostgreSQL.Simple.ToField
 import HStore
 import HStore.PostgresOps.Migrate
 import HStore.PostgresOps.Types
 import System.IO
 import Prelude hiding (length, read)
 
-data PGStorageError = PGStorageError {reason :: String}
+data PGStorageError = PGStorageError {_reason :: String}
 
 openPostgresStorage :: PGStorageOptions -> IO (Either PGStorageError PostgresStorage)
-openPostgresStorage opts = do
+openPostgresStorage opts@PGStorageOptions{storageVersion=dbVersion} = do
   let dbConnectInfo = makeConnectInfo opts
-  dbConnection <- Just <$> connect dbConnectInfo
-  pure $ Right $ PostgresStorage {..}
+  (do
+      dbConnection <- Just <$> connect dbConnectInfo
+      pure $ Right $ PostgresStorage {..})
+     `catchAny` \ ex -> pure (Left $ PGStorageError $ show ex)
 
 closePostgresStorage ::
   MonadIO m =>
   PostgresStorage ->
   m PostgresStorage
-closePostgresStorage s@(PostgresStorage _ Nothing) = pure s
-closePostgresStorage s@(PostgresStorage _ (Just conn)) =
+closePostgresStorage s@(PostgresStorage _ Nothing _) = pure s
+closePostgresStorage s@(PostgresStorage _ (Just conn) _) =
   liftIO (PG.close conn) >> pure s {dbConnection = Nothing}
 
 withPostgresStorage ::
@@ -59,12 +57,50 @@ withPostgresStorage opts act =
       Left err -> pure $ Left err
       Right pg -> Right <$> act pg
   where
-    closeDB (Left err) = pure ()
+    closeDB (Left _) = pure ()
     closeDB (Right st) = void $ closePostgresStorage st
 
+mkEvent ::
+  (Versionable e, MonadIO m) =>
+  Version -> e ->
+  m (StoredEvent e)
+mkEvent v e =
+  do
+    ts <- liftIO getCurrentTime
+    pure $ StoredEvent v ts defaultSha1 e
+
+instance ToField Version where
+  toField (Version v) = toField v
+
+instance ToField SHA1 where
+  toField (SHA1 bs) = toField (Hex.encode bs)
+
+instance (ToJSON e) => ToRow (StoredEvent e) where
+  toRow StoredEvent{..} = toRow (eventVersion, eventDate, eventSHA1, toJSON event)
+
+insertEvent :: Query
+insertEvent =
+  "INSERT INTO events VALUE (DEFAULT, ?, ?, ?, ?)"
+
 writeToDB ::
-  (Versionable e, MonadIO m) => PostgresStorage -> m (Either a e) -> (Either a (StorageResult e) -> m r) -> m (StorageResult r)
-writeToDB _storage _pre _post = undefined
+  (Versionable e, ToJSON e, MonadIO m, MonadCatch m) =>
+  PostgresStorage ->
+  m (Either a e) ->
+  (Either a (StorageResult e) -> m r) ->
+  m (StorageResult r)
+writeToDB PostgresStorage {dbConnection=Nothing} _pre _post = pure $ OpFailed "no database connection"
+writeToDB PostgresStorage {dbConnection=Just connection, dbVersion} pre post =
+  do
+    p <- pre
+    case p of
+      Left l -> WriteFailed <$> post (Left l)
+      Right payload -> do
+        res <- ( do
+                   _ <- mkEvent dbVersion payload >>= liftIO . execute connection insertEvent
+                   pure $ WriteSucceed payload
+                 )
+          `catchAny` \ex -> pure (OpFailed $ show ex)
+        WriteSucceed <$> post (Right res)
 
 readFromDB ::
   (Versionable s, MonadIO m) => PostgresStorage -> m (StorageResult s)
@@ -74,9 +110,9 @@ resetDB ::
   MonadIO m =>
   PostgresStorage ->
   m (StorageResult ())
-resetDB = undefined
+resetDB = const $ pure $ WriteSucceed ()
 
-instance (MonadIO m) => Store m PostgresStorage where
+instance (MonadIO m, MonadCatch m) => Store m PostgresStorage where
   close = closePostgresStorage
   store = writeToDB
   load = readFromDB

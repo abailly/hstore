@@ -16,9 +16,12 @@ category:            Database
 description:         Please see the README on GitHub at <https://github.com/abailly/hstore#readme>
 
 dependencies:
+- aeson
 - async
 - base
+- base16-bytestring
 - binary
+- binary-instances
 - bytestring
 - cereal
 - clock
@@ -28,6 +31,7 @@ dependencies:
 - safe-exceptions
 - stm
 - text
+- time
 
 default-extensions:
 - ExistentialQuantification
@@ -38,6 +42,11 @@ default-extensions:
 - RankNTypes
 - RecordWildCards
 - ScopedTypeVariables
+
+ghc-options:
+- -Wall
+- -fno-warn-orphans
+- -Werror
 
 library:
   source-dirs: src

@@ -29,15 +29,15 @@ grantRights = "GRANT ALL PRIVILEGES ON DATABASE ? TO ?"
 makeDb ::
   Connection -> Text -> Text -> Text -> IO ()
 makeDb connection newDbName newUserName newPassword = do
-  execute connection createDb (Only $ Identifier newDbName)
-  execute connection createUser (Identifier newUserName, newPassword)
+  void $ execute connection createDb (Only $ Identifier newDbName)
+  void $ execute connection createUser (Identifier newUserName, newPassword)
   void $ execute connection grantRights (Identifier newDbName, Identifier newUserName)
 
 createTable :: MigrationCommand
 createTable =
   MigrationScript
     "CreateTable"
-    "CREATE TABLE events ( event_id SERIAL PRIMARY KEY, event_version INT, event_data TIMESTAMP, event JSON)"
+    "CREATE TABLE events ( event_id SERIAL PRIMARY KEY, event_version INT, event_date TIMESTAMP, event_sha1 CHAR(40), event JSON)"
 
 migrations :: [MigrationCommand]
 migrations = [MigrationInitialization, createTable]
