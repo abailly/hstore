@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -12,14 +12,13 @@ module HStore.PostgresOpsSpec
   )
 where
 
-import Data.Aeson(ToJSON, FromJSON)
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async
 import Control.Exception (bracket)
 import Control.Monad.Trans (MonadIO)
+import Data.Aeson (FromJSON, ToJSON)
+import Data.Binary
 import Data.Either
 import Data.Functor
-import Data.Binary
 import Data.Text (Text, pack)
 import HStore
 import HStore.PostgresOps
@@ -29,7 +28,6 @@ import System.Exit
 import System.Process.Typed
 import Test.Hspec
 import Test.QuickCheck as Q
-import Test.QuickCheck.Monadic as Q
 import Prelude hiding (init)
 
 newtype Add = Add Int
@@ -67,20 +65,6 @@ storeAdd st a =
       WriteSucceed (Stored a') -> pure $ Right a'
       err -> pure $ Left $ pack $ show err
 
-prop_persistentStateSerializesConcurrentWrites :: PGStorageOptions -> [[Add]] -> Property
-prop_persistentStateSerializesConcurrentWrites storageOpts commands = collect (length commands) $ monadicIO $ do
-  Right (_, evs) <- Q.run $ withPostgresStorage storageOpts $ \st -> do
-    void $ reset st
-    evs <- partitionEithers . concat <$> mapConcurrently (mapM (storeAdd st)) commands
-    return evs
-  monitor (counterexample $ show commands)
-  assert $ length evs == length (concat commands)
-  Right (LoadSucceed evs') <- Q.run $ withPostgresStorage storageOpts load
-  -- We check all events returned from actions are stored but they may be in different orders
-  -- although all command execution and writes are serialized, it is possible the events be
-  -- returned to this test thread in different orders
-  assert $ all (`elem` evs') evs && all (`elem` evs) evs'
-
 withPGDatabase ::
   (PGStorageOptions -> IO c) -> IO c
 withPGDatabase = bracket startPostgres stopPostgres
@@ -112,7 +96,7 @@ withPGDatabase = bracket startPostgres stopPostgres
           pure $ pgOptions
     stopPostgres PGStorageOptions {dbPort} = do
       let name = "postgres-" <> show dbPort
-      runProcess_ $ proc "docker" ["kill", name]
+      runProcess_ $ proc "docker" ["rm", "-f", name]
       pure ()
     waitForPostgresReady ::
       String -> Int -> IO Bool
@@ -125,5 +109,9 @@ withPGDatabase = bracket startPostgres stopPostgres
 
 spec :: Spec
 spec = around withPGDatabase $ describe "Postgres Storage" $ do
-  it "should serialize concurrent writes to postgres store" $
-    \storageOpts -> property (prop_persistentStateSerializesConcurrentWrites storageOpts)
+  it "should serialize concurrent writes to postgres store" $ \st -> do
+    commands <- generate (arbitrary :: Gen [Add])
+    let storeAll storage = partitionEithers <$> mapM (storeAdd storage) commands
+    Right (_, evs) <- withPostgresStorage st $ storeAll
+    evs' <- withPostgresStorage st load
+    evs' `shouldBe` Right (LoadSucceed evs)

@@ -37,7 +37,7 @@ createTable :: MigrationCommand
 createTable =
   MigrationScript
     "CreateTable"
-    "CREATE TABLE events ( event_id SERIAL PRIMARY KEY, event_version INT, event_date TIMESTAMP, event_sha1 CHAR(40), event JSON)"
+    "CREATE TABLE events ( event_id SERIAL PRIMARY KEY, event_version INT, event_date TIMESTAMPTZ, event_sha1 CHAR(40), event JSON)"
 
 migrations :: [MigrationCommand]
 migrations = [MigrationInitialization, createTable]

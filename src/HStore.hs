@@ -44,3 +44,12 @@ instance (Show s) => Show (StorageResult s) where
   show (LoadSucceed ss) = "LoadSucceed " ++ show (length ss)
   show ResetSucceed = "ResetSucceed"
   show NoOp = "NoOp"
+
+instance (Eq s) => Eq (StorageResult s) where
+  (OpFailed r) == (OpFailed r') = r == r'
+  (WriteSucceed s) == (WriteSucceed s') = s == s'
+  (WriteFailed f) == (WriteFailed f') = f == f'
+  (LoadSucceed ss) == (LoadSucceed ss') = ss == ss'
+  ResetSucceed == ResetSucceed = True
+  NoOp == NoOp = True
+  _ == _ = False
