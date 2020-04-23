@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -87,7 +88,7 @@ withPGDatabase = bracket startPostgres stopPostgres
 
 spec :: Spec
 spec = around withPGDatabase $ describe "Postgres Storage" $ do
-  it "should write to postgres store" $ \st -> do
+  it "should write and load all to postgres store" $ \st -> do
     commands <- generate (arbitrary :: Gen [Added])
 
     let storeAll storage = mapM (\(e,r) -> store storage r [e]) (zip commands [0..])
@@ -114,3 +115,10 @@ spec = around withPGDatabase $ describe "Postgres Storage" $ do
     res `shouldBe` Right (StoreSuccess 20)
     evs <- withPostgresStorage st $ \s -> load s 0 10
     evs `shouldBe` Right (LoadSuccess $ take 10 events)
+
+  it "loads nothing given revision is greater than current" $ \ st -> do
+    events <- sequence $ replicate 20 (generate (arbitrary :: Gen Added))
+    res <- withPostgresStorage st $ \s -> store s 0 events
+    res `shouldBe` Right (StoreSuccess 20)
+    evs <- withPostgresStorage st $ \s -> load s 21 10
+    evs `shouldBe` Right (LoadSuccess [] :: LoadResult Added)
