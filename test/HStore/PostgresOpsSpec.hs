@@ -85,7 +85,7 @@ spec = around withPGDatabase $ describe "Postgres Storage" $ do
     commands <- generate (arbitrary :: Gen [Added])
 
     let storeAll storage = mapM (\(e,r) -> store storage r [e]) (zip commands [0..])
-    _ <- withPostgresStorage st $ storeAll
+    _res <- withPostgresStorage st $ storeAll
     evs' <- withPostgresStorage st (\ s -> load s 0 0)
     evs' `shouldBe` Right (LoadSuccess commands)
 
@@ -95,3 +95,8 @@ spec = around withPGDatabase $ describe "Postgres Storage" $ do
     Right (StoreSuccess 1) <- withPostgresStorage st $ \s -> store s 0 [ad]
     res <- withPostgresStorage st $ \ s -> store s 0 [ad']
     res `shouldBe` Right (StoreFailure $ InvalidRevision 0 1)
+
+  it "can write muliple events at once" $ \st -> do
+    events <- generate (arbitrary :: Gen [Added])
+    res <- withPostgresStorage st $ \s -> store s 0 events
+    res `shouldBe` Right (StoreSuccess $ fromIntegral (length events))

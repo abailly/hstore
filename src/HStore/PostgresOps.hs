@@ -136,7 +136,7 @@ instance FromRow Revision where
 -- https://www.postgresql.org/docs/9.4/dml-returning.html
 insertEvent :: Query
 insertEvent =
-  "INSERT INTO events VALUES (DEFAULT, ?, ?, ?, ?) RETURNING event_id"
+  "INSERT INTO events(event_version, event_date,event_sha1,event) VALUES (?, ?, ?, ?)"
 
 writeToDB ::
   (Versionable e, MonadIO m, MonadCatch m) =>
@@ -145,19 +145,19 @@ writeToDB ::
   [e] ->
   m StoreResult
 writeToDB PostgresStorage {dbConnection = Nothing} _ _ = pure $ StoreFailure $ StoreError "no database connection"
-writeToDB PostgresStorage {dbConnection = Just connection, dbVersion, dbRevision} revision [e] =
+writeToDB PostgresStorage {dbConnection = Just connection, dbVersion, dbRevision} revision events =
   liftIO $ modifyMVar dbRevision $
     \currev ->
       if revision /= currev
         then pure (currev, StoreFailure $ InvalidRevision revision currev)
         else ( do
-                 rev <- mkEvent dbVersion e >>= query connection insertEvent
+                 _numInserted <- mapM (mkEvent dbVersion) events >>= executeMany connection insertEvent
+                 rev <- query_ connection maxRevision
                  case rev of
                    [r] -> pure $ (r, StoreSuccess r)
                    _ -> pure $ (currev, StoreFailure $ StoreError "insert returned no result or too many results, something's wrong")
              )
           `catchAny` \ex -> pure (currev, StoreFailure $ StoreError $ show ex)
-writeToDB _ _ _ = pure $ StoreFailure $ StoreError "don't know how to write multiple values"
 
 selectAllEvents :: Query
 selectAllEvents = "SELECT event_version, event_date, event_sha1, event FROM events"
