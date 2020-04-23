@@ -197,11 +197,19 @@ readAllFromDB ::
   PostgresStorage ->
   a ->
   (a -> s -> a) ->
-  m (LoadResult a)
+  m (LoadResult (a, Revision))
 readAllFromDB PostgresStorage {dbConnection = Nothing} _ _  = pure $ LoadFailure $ StoreError $ "no database connection"
-readAllFromDB PostgresStorage {dbConnection = Just connection} initial f =
-  (LoadSuccess <$> liftIO (fold_ connection selectAllEvents initial impuref ))
-    `catchAny` \ex -> pure (LoadFailure $ StoreError $ show ex)
+readAllFromDB PostgresStorage {dbConnection = Just connection, dbRevision} initial f =
+  liftIO $ modifyMVar dbRevision $
+  \currev ->
+    ( do
+        st <- liftIO (fold_ connection selectAllEvents initial impuref )
+        rev <- query_ connection maxRevision
+        case rev of
+          [r] -> pure $ (r, LoadSuccess (st, r))
+          _ -> pure $ (currev, LoadFailure $ StoreError "insert returned no result or too many results, something's wrong")
+    )
+    `catchAny` \ex -> pure (currev, LoadFailure $ StoreError $ show ex)
   where
     impuref :: a -> StoredEvent Value -> IO a
     impuref a e = pure $ either (const a) (f a) (parseEvent $ event e)

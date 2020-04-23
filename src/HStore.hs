@@ -87,8 +87,9 @@ class Store m store where
     a ->
     -- | Callback function that will receive all events in sequence
     (a -> event -> a) ->
-    -- | Final result
-    m (LoadResult a)
+    -- | Final result: the final state accumulated along with the last `Revision`
+    -- stored
+    m (LoadResult (a, Revision))
 
 data StoreError
   = StoreError {errorReason :: String}
