@@ -11,13 +11,6 @@ packages:
       sha256: c2843bfe43b804992bc913f33ec6b2c6cb0fc99c6d931b6ff85894e8aef9a99e
   original:
     hackage: postgresql-simple-migration-0.1.15.0@sha256:0e24e96908430f5caf9c1c1d9ca7c5c108e4e0409a255e2cbd77e8cd252dbb02,3879
-- completed:
-    hackage: binary-instances-1.0.0.1@sha256:70c5759ab4f09cf661f68b72b3543872bc32b61095159d2bfcda8d71dce29b7e,2637
-    pantry-tree:
-      size: 1035
-      sha256: b0d454f73c456c07f02e40002444922ec23278955a222466a8063800aa949c6d
-  original:
-    hackage: binary-instances-1.0.0.1@sha256:70c5759ab4f09cf661f68b72b3543872bc32b61095159d2bfcda8d71dce29b7e,2637
 snapshots:
 - completed:
     size: 491387

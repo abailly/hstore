@@ -21,7 +21,6 @@ dependencies:
 - base
 - base16-bytestring
 - binary
-- binary-instances
 - bytestring
 - cereal
 - clock
