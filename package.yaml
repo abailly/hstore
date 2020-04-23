@@ -26,12 +26,15 @@ dependencies:
 - cereal
 - clock
 - mtl
+- network
 - postgresql-simple
 - postgresql-simple-migration
 - safe-exceptions
 - stm
 - text
 - time
+- typed-process
+- warp
 
 default-extensions:
 - ExistentialQuantification
@@ -65,9 +68,6 @@ tests:
     - hstore
     - hspec
     - hspec-discover
-    - network
     - process
     - QuickCheck
     - unix
-    - typed-process
-    - warp
