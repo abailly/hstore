@@ -1,55 +1,87 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 -- | Interface and types for persisting events in an underlying `Store`
-module HStore
-  ( module HStore.Events,
-    Versionable (..),
-    Version (..),
-    StorageResult (..),
-    Store (..),
-  )
-where
+module HStore where
 
-import HStore.Events
-import Data.Aeson(ToJSON, FromJSON)
+import Data.Aeson (FromJSON (..), ToJSON (..), Value)
+import Data.Aeson.Types (parseEither)
+import Data.Word
+
+-- * Events
+
+-- | A `Revision` is the unique index of an event within the overall
+-- stream of events, hinting at the fact its a /revision/ number of
+-- some potential state.
+newtype Revision = Revision {revision :: Word64}
+  deriving (Show, Eq, Num, Ord, Enum, Real, Integral)
+
+-- | A `Version` is attached to each /event/ and denotes changes in
+-- the structure of the event. An event stream can store events with
+-- different version numbers but `Version` numbers are expected to be
+-- monotonically increasing, so it should be the case that
+--
+-- @@
+-- version e > version e' => revision e > revision e'
+-- @@
+newtype Version = Version {version :: Word64}
+  deriving (Show, Eq, Num, Ord, Enum, Real, Integral)
+
+defaultVersion :: Version
+defaultVersion = Version 1
+
+-- | Events stored are expected to be `Versionable` meaning they can
+-- be converted to/from JSON at a given `Version`  number. This class
+-- wraps the `ToJSON`/`FromJSON` classes from /aeson/ package, adding
+-- a `Version` parameter to the serialization operations.
+class (ToJSON s, FromJSON s) => Versionable s where
+  -- | Write the given type `s` as JSON for a given version
+  -- Defaults to ignoring the @version@ argument.
+  write :: Version -> s -> Value
+  write _ = toJSON
+
+  -- | Read some JSON at some `version` as an `s`
+  -- Defaults to ignoring `version` argument.
+  -- Returns either the parsed object or a `String` providing hopefully
+  -- some explanation on the error.
+  read :: Version -> Value -> Either String s
+  read _ = parseEither parseJSON
+
+-- * Storage
 
 class Store m store where
-  close :: store -> m store
   store ::
-    (Versionable event, ToJSON event) =>
+    (Versionable event) =>
     -- | Storage Engine
     store ->
-    -- | Pre-treatment action that returns something to serialize or an error that is passed down to post
-    --  as is
-    m (Either error event) ->
-    -- | Post-treatment action that provides some result out of storage result or error in pre-treatment
-    (Either error (StorageResult event) -> m result) ->
-    m (StorageResult result)
-  load :: (Versionable event, FromJSON event) => store -> m (StorageResult event)
-  reset :: store -> m (StorageResult ())
+    -- | The expected /revision index/ of this store
+    Revision ->
+    -- | The sequence of `event`s to store
+    [event] ->
+    -- | Operation result, either a success with the last revision number
+    -- or an error
+    m StoreResult
+  load ::
+    (Versionable event) =>
+    -- | Storage engine
+    store ->
+    -- | The /revision/ at which to start loading data
+    Revision ->
+    -- | The maximum number of events to load. The operation can return less
+    -- events if fewer are available from the underlying storage
+    Word64 ->
+    -- | Operation's result, either a success with a list of events or an
+    -- error
+    m (LoadResult event)
 
--- | Result of storage operations.
-data StorageResult s where
-  OpFailed :: {failureReason :: String} -> StorageResult s
-  WriteSucceed :: s -> StorageResult s
-  WriteFailed :: s -> StorageResult s
-  LoadSucceed :: (Versionable s) => [s] -> StorageResult s
-  ResetSucceed :: StorageResult s
-  NoOp :: StorageResult s
+data StoreError = StoreError {errorReason :: String}
+  deriving (Eq, Show)
 
-instance (Show s) => Show (StorageResult s) where
-  show (OpFailed r) = "OpFailed " ++ r
-  show (WriteSucceed s) = "WriteSucceed " ++ show s
-  show (WriteFailed f) = "WriteSucceed " ++ show f
-  show (LoadSucceed ss) = "LoadSucceed " ++ show (length ss)
-  show ResetSucceed = "ResetSucceed"
-  show NoOp = "NoOp"
+data StoreResult
+  = StoreSuccess {lastRevision :: Revision}
+  | StoreFailure StoreError
+  deriving (Eq, Show)
 
-instance (Eq s) => Eq (StorageResult s) where
-  (OpFailed r) == (OpFailed r') = r == r'
-  (WriteSucceed s) == (WriteSucceed s') = s == s'
-  (WriteFailed f) == (WriteFailed f') = f == f'
-  (LoadSucceed ss) == (LoadSucceed ss') = ss == ss'
-  ResetSucceed == ResetSucceed = True
-  NoOp == NoOp = True
-  _ == _ = False
+data LoadResult event
+  = LoadSuccess {loadedEvents :: [event]}
+  | LoadFailure StoreError
+  deriving (Eq, Show)

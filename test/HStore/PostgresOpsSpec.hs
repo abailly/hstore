@@ -14,12 +14,10 @@ where
 
 import Control.Concurrent (threadDelay)
 import Control.Exception (bracket)
-import Control.Monad.Trans (MonadIO)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary
 import Data.Either
 import Data.Functor
-import Data.Text (Text, pack)
 import HStore
 import HStore.PostgresOps
 import qualified Network.Socket as Network
@@ -30,40 +28,14 @@ import Test.Hspec
 import Test.QuickCheck as Q
 import Prelude hiding (init)
 
-newtype Add = Add Int
-  deriving (Eq, Show)
-
-instance Arbitrary Add where
-  arbitrary = Add <$> choose (1, 100)
-
 newtype Added = Added Int
   deriving stock (Eq, Show)
   deriving newtype (Binary, ToJSON, FromJSON)
 
+instance Arbitrary Added where
+  arbitrary = Added <$> choose (1, 100)
+
 instance Versionable Added
-
-mkEvent ::
-  Applicative m => Add -> m (Either () Added)
-mkEvent (Add i) = pure $ Right (Added i)
-
-data Stored
-  = Stored Added
-  | Failed Text
-  deriving (Eq, Show)
-
-mkResult ::
-  Applicative m => Either () (StorageResult Added) -> m Stored
-mkResult (Right (WriteSucceed a)) = pure $ Stored a
-mkResult (Right err) = pure $ Failed (pack $ show err)
-mkResult (Left err) = pure $ Failed (pack $ show err)
-
-storeAdd ::
-  (Store m s, MonadIO m) => s -> Add -> m (Either Text Added)
-storeAdd st a =
-  store st (mkEvent a) mkResult
-    >>= \case
-      WriteSucceed (Stored a') -> pure $ Right a'
-      err -> pure $ Left $ pack $ show err
 
 withPGDatabase ::
   (PGStorageOptions -> IO c) -> IO c
@@ -109,9 +81,9 @@ withPGDatabase = bracket startPostgres stopPostgres
 
 spec :: Spec
 spec = around withPGDatabase $ describe "Postgres Storage" $ do
-  it "should serialize concurrent writes to postgres store" $ \st -> do
-    commands <- generate (arbitrary :: Gen [Add])
-    let storeAll storage = partitionEithers <$> mapM (storeAdd storage) commands
-    Right (_, evs) <- withPostgresStorage st $ storeAll
-    evs' <- withPostgresStorage st load
-    evs' `shouldBe` Right (LoadSucceed evs)
+  it "should write to postgres store" $ \st -> do
+    commands <- generate (arbitrary :: Gen [Added])
+    let storeAll storage = mapM (store storage 0 . (:[])) commands
+    _ <- withPostgresStorage st $ storeAll
+    evs' <- withPostgresStorage st (\ s -> load s 0 0)
+    evs' `shouldBe` Right (LoadSuccess commands)
