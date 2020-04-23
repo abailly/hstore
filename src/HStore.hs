@@ -49,6 +49,8 @@ class (ToJSON s, FromJSON s) => Versionable s where
 -- * Storage
 
 class Store m store where
+  -- | Store a sequence of events in the underlying data stream at
+  -- given `Revision` number.
   store ::
     (Versionable event) =>
     -- | Storage Engine
@@ -60,6 +62,8 @@ class Store m store where
     -- | Operation result, either a success with the last revision number
     -- or an error
     m StoreResult
+
+  -- | Load a sequence of events from the underlying storage
   load ::
     (Versionable event) =>
     -- | Storage engine
@@ -71,10 +75,24 @@ class Store m store where
     Word64 ->
     -- | Operation's result, either a success with a list of events or an
     -- error
-    m (LoadResult event)
+    m (LoadResult [event])
 
-data StoreError = StoreError {errorReason :: String}
-  | InvalidRevision { requested :: Revision, actual :: Revision }
+  -- | "Streaming" interface to load all events from underlying storage in
+  -- a possibly more efficient way
+  loadAll ::
+    (Versionable event) =>
+    -- | Storage engine
+    store ->
+    -- | Initial state
+    a ->
+    -- | Callback function that will receive all events in sequence
+    (a -> event -> a) ->
+    -- | Final result
+    m (LoadResult a)
+
+data StoreError
+  = StoreError {errorReason :: String}
+  | InvalidRevision {requested :: Revision, actual :: Revision}
   deriving (Eq, Show)
 
 data StoreResult
@@ -82,7 +100,7 @@ data StoreResult
   | StoreFailure StoreError
   deriving (Eq, Show)
 
-data LoadResult event
-  = LoadSuccess {loadedEvents :: [event]}
+data LoadResult result
+  = LoadSuccess result
   | LoadFailure StoreError
   deriving (Eq, Show)

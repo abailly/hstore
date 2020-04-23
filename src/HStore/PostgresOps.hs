@@ -144,6 +144,9 @@ insertEvent =
 selectEvents :: Query
 selectEvents = "SELECT event_version, event_date, event_sha1, event FROM events WHERE event_id >= ? LIMIT ?"
 
+selectAllEvents :: Query
+selectAllEvents = "SELECT event_version, event_date, event_sha1, event FROM events"
+
 writeToDB ::
   (Versionable e, MonadIO m, MonadCatch m) =>
   PostgresStorage ->
@@ -177,7 +180,7 @@ readFromDB ::
   PostgresStorage ->
   Revision ->
   Word64 ->
-  m (LoadResult s)
+  m (LoadResult [s])
 readFromDB PostgresStorage {dbConnection = Nothing} _ _ = pure $ LoadFailure $ StoreError $ "no database connection"
 readFromDB PostgresStorage {dbConnection = Just connection} startRevision numberToLoad =
   ( do
@@ -188,6 +191,23 @@ readFromDB PostgresStorage {dbConnection = Just connection} startRevision number
   )
     `catchAny` \ex -> pure (LoadFailure $ StoreError $ show ex)
 
+readAllFromDB ::
+  forall a s m.
+  (Versionable s, MonadIO m, MonadCatch m, FromJSON s) =>
+  PostgresStorage ->
+  a ->
+  (a -> s -> a) ->
+  m (LoadResult a)
+readAllFromDB PostgresStorage {dbConnection = Nothing} _ _  = pure $ LoadFailure $ StoreError $ "no database connection"
+readAllFromDB PostgresStorage {dbConnection = Just connection} initial f =
+  (LoadSuccess <$> liftIO (fold_ connection selectAllEvents initial impuref ))
+    `catchAny` \ex -> pure (LoadFailure $ StoreError $ show ex)
+  where
+    impuref :: a -> StoredEvent Value -> IO a
+    impuref a e = pure $ either (const a) (f a) (parseEvent $ event e)
+
+
 instance (MonadIO m, MonadCatch m) => Store m PostgresStorage where
   store = writeToDB
   load = readFromDB
+  loadAll = readAllFromDB

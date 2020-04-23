@@ -24,9 +24,9 @@ import Test.Hspec
 import Test.QuickCheck as Q
 import Prelude hiding (init)
 
-newtype Added = Added Int
+newtype Added = Added { unadded :: Int }
   deriving stock (Eq, Show)
-  deriving newtype (Binary, ToJSON, FromJSON)
+  deriving newtype (Binary, Num, ToJSON, FromJSON)
 
 instance Arbitrary Added where
   arbitrary = Added <$> choose (1, 100)
@@ -63,4 +63,12 @@ spec = around withPGDatabase $ describe "Postgres Storage" $ do
     res <- withPostgresStorage st $ \s -> store s 0 events
     res `shouldBe` Right (StoreSuccess 20)
     evs <- withPostgresStorage st $ \s -> load s 21 10
-    evs `shouldBe` Right (LoadSuccess [] :: LoadResult Added)
+    evs `shouldBe` Right (LoadSuccess [] :: LoadResult [Added])
+
+  it "loads all stored events with a callaback" $ \st -> do
+    events <- sequence $ replicate 200 (generate (arbitrary :: Gen Added))
+    let f acc (Added x) = acc + x
+    res <- withPostgresStorage st $ \s -> do
+      _ <- store s 0 events
+      loadAll s 0 f
+    res `shouldBe` Right (LoadSuccess $ unadded $ sum events)
