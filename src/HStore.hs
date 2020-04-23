@@ -74,6 +74,7 @@ class Store m store where
     m (LoadResult event)
 
 data StoreError = StoreError {errorReason :: String}
+  | InvalidRevision { requested :: Revision, actual :: Revision }
   deriving (Eq, Show)
 
 data StoreResult

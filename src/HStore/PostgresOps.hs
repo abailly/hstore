@@ -1,9 +1,9 @@
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 -- | Low-level file storage engine
 module HStore.PostgresOps
@@ -17,13 +17,16 @@ module HStore.PostgresOps
   )
 where
 
+import Control.Concurrent.MVar
 import Control.Exception.Safe (MonadCatch, bracket, catchAny)
 import Control.Monad.Trans (MonadIO (..))
 import Data.Aeson (FromJSON, Result (..), ToJSON (..), Value, fromJSON)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as Hex
 import Data.Either
 import Data.Functor (void)
 import Data.Time.Clock
+import Data.Word (Word64)
 import Database.PostgreSQL.Simple as PG
 import Database.PostgreSQL.Simple.FromField
 import Database.PostgreSQL.Simple.FromRow
@@ -32,10 +35,8 @@ import Database.PostgreSQL.Simple.ToRow
 import HStore
 import HStore.PostgresOps.Migrate
 import HStore.PostgresOps.Types
-import Data.Word(Word64)
 import System.IO
 import Prelude hiding (length, read)
-import qualified Data.ByteString as BS
 
 newtype SHA1 = SHA1 {unSha1 :: BS.ByteString} deriving (Show, Eq)
 
@@ -64,12 +65,16 @@ instance Eq s => Eq (StoredEvent s) where
 data PGStorageError = PGStorageError {_reason :: String}
   deriving (Eq, Show)
 
+maxRevision :: Query
+maxRevision = "SELECT COALESCE(MAX(event_id),0) FROM events"
+
 openPostgresStorage :: PGStorageOptions -> IO (Either PGStorageError PostgresStorage)
 openPostgresStorage opts@PGStorageOptions {storageVersion = dbVersion} = do
   let dbConnectInfo = makeConnectInfo opts
   ( do
-      dbConnection <- Just <$> connect dbConnectInfo
-      pure $ Right $ PostgresStorage {..}
+      conn <- connect dbConnectInfo
+      dbRevision <- query_ conn maxRevision >>= newMVar . head
+      pure $ Right $ PostgresStorage {dbConnection = Just conn, ..}
     )
     `catchAny` \ex -> pure (Left $ PGStorageError $ show ex)
 
@@ -77,8 +82,8 @@ closePostgresStorage ::
   MonadIO m =>
   PostgresStorage ->
   m PostgresStorage
-closePostgresStorage s@(PostgresStorage _ Nothing _) = pure s
-closePostgresStorage s@(PostgresStorage _ (Just conn) _) =
+closePostgresStorage s@(PostgresStorage _ Nothing _ _) = pure s
+closePostgresStorage s@(PostgresStorage _ (Just conn) _ _) =
   liftIO (PG.close conn) >> pure s {dbConnection = Nothing}
 
 withPostgresStorage ::
@@ -135,16 +140,23 @@ insertEvent =
 
 writeToDB ::
   (Versionable e, MonadIO m, MonadCatch m) =>
-  PostgresStorage -> Revision -> [e] ->  m StoreResult
+  PostgresStorage ->
+  Revision ->
+  [e] ->
+  m StoreResult
 writeToDB PostgresStorage {dbConnection = Nothing} _ _ = pure $ StoreFailure $ StoreError "no database connection"
-writeToDB PostgresStorage {dbConnection = Just connection, dbVersion} _ [e] =
-  (do
-      rev <- mkEvent dbVersion e >>= liftIO . query connection insertEvent
-      case rev of
-        r:_ -> pure $ StoreSuccess r
-        [] -> pure $ StoreFailure $ StoreError "insert returned no result, something's wrong"
-  )
-  `catchAny` \ex -> pure (StoreFailure $ StoreError $ show ex)
+writeToDB PostgresStorage {dbConnection = Just connection, dbVersion, dbRevision} revision [e] =
+  liftIO $ modifyMVar dbRevision $
+    \currev ->
+      if revision /= currev
+        then pure (currev, StoreFailure $ InvalidRevision revision currev)
+        else ( do
+                 rev <- mkEvent dbVersion e >>= query connection insertEvent
+                 case rev of
+                   [r] -> pure $ (r, StoreSuccess r)
+                   _ -> pure $ (currev, StoreFailure $ StoreError "insert returned no result or too many results, something's wrong")
+             )
+          `catchAny` \ex -> pure (currev, StoreFailure $ StoreError $ show ex)
 writeToDB _ _ _ = pure $ StoreFailure $ StoreError "don't know how to write multiple values"
 
 selectAllEvents :: Query
@@ -159,7 +171,10 @@ parseEvent val =
 
 readFromDB ::
   (Versionable s, MonadIO m, MonadCatch m, FromJSON s) =>
-  PostgresStorage -> Revision -> Word64 -> m (LoadResult s)
+  PostgresStorage ->
+  Revision ->
+  Word64 ->
+  m (LoadResult s)
 readFromDB PostgresStorage {dbConnection = Nothing} _ _ = pure $ LoadFailure $ StoreError $ "no database connection"
 readFromDB PostgresStorage {dbConnection = Just connection} _ _ =
   ( do

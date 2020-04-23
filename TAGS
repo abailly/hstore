@@ -2,130 +2,137 @@
 ./Setup.hs,15
 main main1,2
 
-./test/HStore/FileOpsSpec.hs,608
-module HStore.FileOpsSpec(HStore.FileOpsSpec4,5
-newtype Add Add26,27
-instance Arbitrary Arbitrary Add29,30
-  arbitrary arbitrary30,31
-newtype Added Added32,33
-instance Serialize Serialize Added35,36
-instance Versionable Versionable Added36,37
-mkEvent mkEvent38,39
-data Stored Stored41,42
-data Stored = Stored Stored41,42
-    | Failed Failed42,43
-mkResult mkResult45,46
-storeAdd storeAdd50,51
-prop_persistentStateSerializesConcurrentWrites prop_persistentStateSerializesConcurrentWrites57,58
-storageOpts storageOpts74,75
-temporaryStorage temporaryStorage79,80
-spec spec93,94
+./test/HStore/PostgresOpsSpec.hs,256
+module HStore.PostgresOpsSpecHStore.PostgresOpsSpec9,10
+newtype Added Added30,31
+instance Arbitrary Arbitrary Added34,35
+  arbitrary arbitrary35,36
+instance Versionable Versionable Added37,38
+withPGDatabase withPGDatabase39,40
+spec spec81,82
 
 ./test/Spec.hs,0
 
-./src/HStore.hs,1024
-module HStoreHStore3,4
-class Store Store18,19
-  close close19,20
-  store store20,21
-  load load29,30
-  reset reset30,31
-newtype Offset Offset33,34
-newtype Offset = Offset { offset offset33,34
-newtype Count Count34,35
-newtype Count  = Count { count count34,35
-data StoreError StoreError36,37
-data StoreError = IOError IOError36,37
-data StoreError = IOError { reason reason36,37
-instance Serialize Serialize StoreError39,40
-  put put40,41
-  get get41,42
-type Reader Reader44,45
-data StoreOperation StoreOperation47,48
-  OpStore OpStore48,49
-    => { pre pre49,50
-       , post post50,51
-  OpLoad OpLoad52,53
-  OpReset OpReset53,54
-data StorageResult StorageResult56,57
-  OpFailed OpFailed57,58
-  OpFailed     :: { failureReason failureReason57,58
-  WriteSucceed WriteSucceed58,59
-  WriteFailed WriteFailed59,60
-  LoadSucceed LoadSucceed60,61
-  ResetSucceed ResetSucceed61,62
-  NoOp NoOp62,63
-instance (S(Show s) => Show (StorageResult s)64,65
-  show show65,66
+./src/HStore.hs,1013
+module HStore HStore3,4
+newtype Revision Revision14,15
+newtype Revision = Revision {revision revision14,15
+newtype Version Version25,26
+newtype Version = Version {version version25,26
+defaultVersion defaultVersion28,29
+class (ToJSON s, FromJSON s) => Versionable Versionable35,36
+  write write38,39
+  read read45,46
+class Store Store50,51
+  store store51,52
+  load load62,63
+data StoreError StoreError75,76
+data StoreError = StoreError StoreError75,76
+data StoreError = StoreError {errorReason errorReason75,76
+  | InvalidRevision InvalidRevision76,77
+  | InvalidRevision { requested requested76,77
+  | InvalidRevision { requested :: Revision, actual actual76,77
+data StoreResultStoreResult79,80
+  = StoreSuccess StoreSuccess80,81
+  = StoreSuccess {lastRevision lastRevision80,81
+  | StoreFailure StoreFailure81,82
+data LoadResult LoadResult84,85
+  = LoadSuccess LoadSuccess85,86
+  = LoadSuccess {loadedEvents loadedEvents85,86
+  | LoadFailure LoadFailure86,87
 
-./src/HStore/FileOps.hs,1645
-module HStore.FileOps HStore.FileOps1,2
-data FileStorage FileStorage23,24
-data FileStorage = FileStorage FileStorage23,24
-data FileStorage = FileStorage  { storeName storeName23,24
-                                , storeVersion storeVersion24,25
-                                , storeHandle storeHandle25,26
-                                , storeTid storeTid27,28
-                                , storeTQueue storeTQueue29,30
-data StorageOptions StorageOptions33,34
-data StorageOptions = StorageOptions StorageOptions33,34
-data StorageOptions = StorageOptions { storageFilePath storageFilePath33,34
-                                     , storageVersion storageVersion35,36
-                                     , storageQueueSize storageQueueSize39,40
-defaultOptions defaultOptions45,46
-data QueuedOperation QueuedOperation48,49
-  QueuedOperation QueuedOperation49,50
-    { operation operation50,51
-    , opResult opResult51,52
-  QueuedOperation QueuedOperation49,50
-data StorageException StorageException54,55
-data StorageException = CannotDeserialize CannotDeserialize54,55
-instance Exception Exception StorageException57,58
-openFileStorage openFileStorage59,60
-openHandleStorage openHandleStorage70,71
-closeFileStorage closeFileStorage80,81
-withStorage withStorage91,92
-runStorage runStorage94,95
-runOp runOp102,103
-doLoad doLoad154,155
-push push167,168
-writeStore writeStore175,176
-readStore readStore178,179
-resetStore resetStore181,182
-instance Store Store IO FileStorage185,186
-  close close186,187
-  store store187,188
-  load load188,189
-  reset reset189,190
+./src/HStore/PostgresOps/Migrate.hs,400
+module HStore.PostgresOps.MigrateHStore.PostgresOps.Migrate9,10
+createDb, createUser, grantRights grantRights23,24
+createDb, createUser,createUser23,24
+createDb,createDb23,24
+createUser createUser25,26
+grantRights grantRights26,27
+makeDb makeDb28,29
+createTable createTable35,36
+migrations migrations41,42
+createDatabase createDatabase49,50
+migrateDatabase migrateDatabase60,61
 
-./src/HStore/Events.hs,995
-module HStore.Events HStore.Events5,6
-newtype Version Version13,14
-newtype Version = Version { version version13,14
-instance Serialize Serialize Version16,17
-  put put17,18
-  get get18,19
-defaultVersion defaultVersion20,21
-class (Serialize s) => Versionable Versionable25,26
-  write write28,29
-  read read32,33
-instance Versionable Versionable ()35,36
-  write write36,37
-  read read37,38
-newtype SHA1 SHA139,40
-newtype SHA1 = SHA1 { unSha1 unSha139,40
-defaultSha1 defaultSha141,42
+./src/HStore/PostgresOps/Types.hs,661
+module HStore.PostgresOps.Types HStore.PostgresOps.Types0,1
+data PostgresStoragePostgresStorage7,8
+  = PostgresStoragePostgresStorage8,9
+      { dbConnectInfo dbConnectInfo9,10
+        dbConnection dbConnection10,11
+        dbVersion dbVersion11,12
+        dbRevision dbRevision12,13
+data PGStorageOptionsPGStorageOptions16,17
+  = PGStorageOptionsPGStorageOptions17,18
+        dbName dbName19,20
+        dbUser dbUser21,22
+        dbPassword dbPassword23,24
+        dbHost dbHost25,26
+        dbPort dbPort27,28
+        storageVersion storageVersion31,32
+defaultOptions defaultOptions34,35
+makeConnectInfo makeConnectInfo37,38
+
+./src/HStore/PostgresOps.hs,1736
+module HStore.PostgresOpsHStore.PostgresOps8,9
+newtype SHA1 SHA140,41
+newtype SHA1 = SHA1 {unSha1 unSha140,41
+defaultSha1 defaultSha142,43
 data StoredEvent StoredEvent46,47
-data StoredEvent a = StoredEventStoredEvent46,47
-    { eventVersion eventVersion47,48
-    , eventDate eventDate49,50
-    , eventSHA1 eventSHA151,52
-    , event event53,54
-instance Show Show s => Show (StoredEvent s)57,58
-  show show58,59
-instance Eq Eq s => Eq (StoredEvent s)60,61
-  (S(StoredEventvdsev)61,62
-instance (S(Serialize a) => Serialize (StoredEvent a)63,64
-  put put64,65
-  get get74,75
-doStore doStore86,87
+  = StoredEventStoredEvent47,48
+        eventVersion eventVersion49,50
+        eventDate eventDate51,52
+        eventSHA1 eventSHA153,54
+        event event55,56
+instance Show Show s => Show (StoredEvent s)58,59
+  show show59,60
+instance Eq Eq s => Eq (StoredEvent s)61,62
+  (S(StoredEventvdsev)62,63
+data PGStorageError PGStorageError64,65
+data PGStorageError = PGStorageError PGStorageError64,65
+data PGStorageError = PGStorageError {_reason _reason64,65
+maxRevision maxRevision67,68
+openPostgresStorage openPostgresStorage70,71
+closePostgresStorage closePostgresStorage80,81
+withPostgresStorage withPostgresStorage88,89
+mkEvent mkEvent99,100
+instance ToField ToField Version109,110
+  toField toField110,111
+instance FromField FromField Version112,113
+  fromField fromField113,114
+instance ToField ToField SHA1115,116
+  toField toField116,117
+instance FromField FromField SHA1118,119
+  fromField fromField119,120
+instance (T(ToJSON e) => ToRow (StoredEvent e)121,122
+  toRow toRow122,123
+instance FromRow FromRow (StoredEvent Value)124,125
+  fromRow fromRow125,126
+instance FromField FromField Word64128,129
+  fromField fromField129,130
+instance FromRow FromRow Revision131,132
+  fromRow fromRow132,133
+insertEvent insertEvent136,137
+writeToDB writeToDB140,141
+selectAllEvents selectAllEvents161,162
+parseEvent parseEvent164,165
+readFromDB readFromDB171,172
+instance (M(MonadIO m, MonadCatch m) => Store m PostgresStorage187,188
+  store store188,189
+  load load189,190
+
+./src/HStore/Events.hs,493
+module HStore.Events HStore.Events6,7
+newtype SHA1 SHA112,13
+newtype SHA1 = SHA1 {unSha1 unSha112,13
+defaultSha1 defaultSha114,15
+data StoredEvent StoredEvent18,19
+  = StoredEventStoredEvent19,20
+        eventVersion eventVersion21,22
+        eventDate eventDate23,24
+        eventSHA1 eventSHA125,26
+        event event27,28
+instance Show Show s => Show (StoredEvent s)30,31
+  show show31,32
+instance Eq Eq s => Eq (StoredEvent s)33,34
+  (S(StoredEventvdsev)34,35

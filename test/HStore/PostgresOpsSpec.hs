@@ -83,7 +83,15 @@ spec :: Spec
 spec = around withPGDatabase $ describe "Postgres Storage" $ do
   it "should write to postgres store" $ \st -> do
     commands <- generate (arbitrary :: Gen [Added])
-    let storeAll storage = mapM (store storage 0 . (:[])) commands
+
+    let storeAll storage = mapM (\(e,r) -> store storage r [e]) (zip commands [0..])
     _ <- withPostgresStorage st $ storeAll
     evs' <- withPostgresStorage st (\ s -> load s 0 0)
     evs' `shouldBe` Right (LoadSuccess commands)
+
+  it "should fail to write to postgres store given revision is invalid" $ \st -> do
+    ad <- generate (arbitrary :: Gen Added)
+    ad' <- generate (arbitrary :: Gen Added)
+    Right (StoreSuccess 1) <- withPostgresStorage st $ \s -> store s 0 [ad]
+    res <- withPostgresStorage st $ \ s -> store s 0 [ad']
+    res `shouldBe` Right (StoreFailure $ InvalidRevision 0 1)

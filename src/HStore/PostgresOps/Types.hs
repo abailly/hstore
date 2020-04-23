@@ -1,5 +1,6 @@
 module HStore.PostgresOps.Types where
 
+import Control.Concurrent.MVar(MVar)
 import Database.PostgreSQL.Simple as PG
 import HStore
 
@@ -8,7 +9,8 @@ data PostgresStorage
   = PostgresStorage
       { dbConnectInfo :: ConnectInfo,
         dbConnection :: Maybe Connection,
-        dbVersion :: Version
+        dbVersion :: Version,
+        dbRevision :: MVar Revision
       }
 
 -- | Options for opening storage
