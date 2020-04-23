@@ -132,11 +132,17 @@ instance FromField Word64 where
 instance FromRow Revision where
   fromRow = Revision <$> field
 
+instance ToField Revision where
+  toField (Revision rev) = toField rev
+
 -- | Returns the serial value written
 -- https://www.postgresql.org/docs/9.4/dml-returning.html
 insertEvent :: Query
 insertEvent =
   "INSERT INTO events(event_version, event_date,event_sha1,event) VALUES (?, ?, ?, ?)"
+
+selectEvents :: Query
+selectEvents = "SELECT event_version, event_date, event_sha1, event FROM events WHERE event_id >= ? LIMIT ?"
 
 writeToDB ::
   (Versionable e, MonadIO m, MonadCatch m) =>
@@ -159,9 +165,6 @@ writeToDB PostgresStorage {dbConnection = Just connection, dbVersion, dbRevision
              )
           `catchAny` \ex -> pure (currev, StoreFailure $ StoreError $ show ex)
 
-selectAllEvents :: Query
-selectAllEvents = "SELECT event_version, event_date, event_sha1, event FROM events"
-
 parseEvent ::
   (FromJSON e) => Value -> Either String e
 parseEvent val =
@@ -176,9 +179,9 @@ readFromDB ::
   Word64 ->
   m (LoadResult s)
 readFromDB PostgresStorage {dbConnection = Nothing} _ _ = pure $ LoadFailure $ StoreError $ "no database connection"
-readFromDB PostgresStorage {dbConnection = Just connection} _ _ =
+readFromDB PostgresStorage {dbConnection = Just connection} startRevision numberToLoad =
   ( do
-      evs <- fmap (parseEvent . event) <$> liftIO (query_ connection selectAllEvents)
+      evs <- fmap (parseEvent . event) <$> liftIO (query connection selectEvents (startRevision, numberToLoad))
       case partitionEithers evs of
         ([], res) -> pure $ LoadSuccess res
         (errs, _) -> pure $ LoadFailure $ StoreError $ "failed to convert some results " <> show (take 5 errs)
