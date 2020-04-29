@@ -13,25 +13,14 @@ module HStore.PostgresOpsSpec
   )
 where
 
-import Data.Aeson (FromJSON, ToJSON)
-import Data.Binary
 import Data.Either
-import Data.Functor
 import HStore
 import HStore.PostgresOps
 import HStore.PostgresOps.TestHelper
 import Test.Hspec
 import Test.QuickCheck as Q
 import Prelude hiding (init)
-
-newtype Added = Added {unadded :: Int}
-  deriving stock (Eq, Show)
-  deriving newtype (Binary, Num, ToJSON, FromJSON)
-
-instance Arbitrary Added where
-  arbitrary = Added <$> choose (1, 100)
-
-instance Versionable Added
+import HStore.TestHelper
 
 spec :: Spec
 spec = around withPGDatabase $ describe "Postgres Storage" $ do

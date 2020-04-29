@@ -33,6 +33,7 @@ dependencies:
 - text
 - time
 - typed-process
+- vector
 - warp
 
 default-extensions:
