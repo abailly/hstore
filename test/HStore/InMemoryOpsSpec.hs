@@ -27,3 +27,10 @@ spec = around withMemoryStore $ describe "InMemory HStore" $ do
     let offsideRev = fromIntegral $ length ad + 1
     res :: LoadResult [Added] <- load s offsideRev 12
     res `shouldBe` LoadFailure (InvalidRevision offsideRev rev)
+  it "should load only part of events given requested offset is past available data" $ \s -> do
+    ad <- generate (resize 20 arbitrary :: Gen [Added])
+    StoreSuccess _ <- store s 0 ad
+    let rev = fromIntegral $ length ad - 10
+        off = 20
+    LoadSuccess res :: LoadResult [Added] <- load s rev off
+    length res `shouldBe` 10
