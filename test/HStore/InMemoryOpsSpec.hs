@@ -21,3 +21,9 @@ prop_canLoadAllStoredEvents inMem added =  monadicIO $ do
 spec :: Spec
 spec = around withMemoryStore $ describe "InMemory HStore" $ do
   it "should load all events written to the store" $ \s -> property (prop_canLoadAllStoredEvents s)
+  it "should fail to load events if requested revision is past current revision" $ \s -> do
+    ad <- generate (arbitrary :: Gen [Added])
+    StoreSuccess rev <- store s 0 ad
+    let offsideRev = fromIntegral $ length ad + 1
+    res :: LoadResult [Added] <- load s offsideRev 12
+    res `shouldBe` LoadFailure (InvalidRevision offsideRev rev)

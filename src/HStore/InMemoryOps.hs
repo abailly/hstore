@@ -12,6 +12,7 @@ import Data.Aeson (Value, toJSON,fromJSON, Result(..))
 import Data.Vector (Vector, empty, toList, fromList, (++), slice)
 import HStore
 import Data.Either
+import Debug.Trace
 import Prelude hiding ((++))
 
 data InMemoryStorage
@@ -21,7 +22,7 @@ data InMemoryStorage
       }
 
 newInMemoryStorage :: IO InMemoryStorage
-newInMemoryStorage = InMem <$> newTVarIO empty <*> newTVarIO 1
+newInMemoryStorage = InMem <$> newTVarIO empty <*> newTVarIO 0
 
 -- | Run given action passing it an initialised `InMemoryStorage` instance
 withMemoryStore ::
@@ -41,12 +42,18 @@ instance (MonadIO m) => Store m InMemoryStorage where
 
   load InMem{..} rev off = liftIO $ atomically $ do
     vec <- readTVar cells
-    let evs = toList $ slice (fromIntegral rev) (fromIntegral off) vec
-        fromResult (Success a) = Right a
-        fromResult (Error s) = Left s
-        (errs, vals) = partitionEithers $ fmap (fromResult . fromJSON) evs
-    pure $ case errs of
-             [] -> LoadSuccess vals
-             _ -> LoadFailure (StoreError $ "cannot decode some values " <> show (take 5 errs))
+    curRev <- readTVar currentRevision
+    if rev > curRev
+      then pure $ LoadFailure (InvalidRevision rev curRev)
+      else trace ("rev:  " <> show rev <> ", cur: " <> show curRev) $ loadValues vec
+      where
+        loadValues vec = do
+          let evs = toList $ slice (fromIntegral rev) (fromIntegral off) vec
+              fromResult (Success a) = Right a
+              fromResult (Error s) = Left s
+              (errs, vals) = partitionEithers $ fmap (fromResult . fromJSON) evs
+          pure $ case errs of
+                   [] -> LoadSuccess vals
+                   _ -> LoadFailure (StoreError $ "cannot decode some values " <> show (take 5 errs))
 
   loadAll _s _initState _f = undefined
