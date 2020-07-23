@@ -1,4 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 -- | Interface and types for persisting events in an underlying `Store`
 module HStore where
@@ -13,7 +16,7 @@ import Data.Word
 -- stream of events, hinting at the fact its a /revision/ number of
 -- some potential state.
 newtype Revision = Revision {revision :: Word64}
-  deriving (Show, Eq, Num, Ord, Enum, Real, Integral)
+  deriving newtype (Show, Eq, Num, Ord, Enum, Real, Integral)
 
 -- | A `Version` is attached to each /event/ and denotes changes in
 -- the structure of the event. An event stream can store events with
@@ -24,7 +27,7 @@ newtype Revision = Revision {revision :: Word64}
 -- version e > version e' => revision e > revision e'
 -- @@
 newtype Version = Version {version :: Word64}
-  deriving (Show, Eq, Num, Ord, Enum, Real, Integral)
+  deriving newtype (Show, Eq, Num, Ord, Enum, Real, Integral)
 
 defaultVersion :: Version
 defaultVersion = Version 1
@@ -104,4 +107,4 @@ data StoreResult
 data LoadResult result
   = LoadSuccess result
   | LoadFailure StoreError
-  deriving (Eq, Show)
+  deriving stock (Eq, Show, Functor)

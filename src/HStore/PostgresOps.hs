@@ -20,7 +20,7 @@ where
 import Control.Concurrent.MVar
 import Control.Exception.Safe (MonadCatch, bracket, catchAny)
 import Control.Monad.Trans (MonadIO (..))
-import Data.Aeson (FromJSON, Result (..), ToJSON (..), Value, fromJSON)
+import Data.Aeson (FromJSON, ToJSON (..), Value)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as Hex
 import Data.Either
@@ -33,6 +33,7 @@ import Database.PostgreSQL.Simple.FromRow
 import Database.PostgreSQL.Simple.ToField
 import Database.PostgreSQL.Simple.ToRow
 import HStore
+import HStore.Events
 import HStore.PostgresOps.Migrate
 import HStore.PostgresOps.Types
 import System.IO
@@ -167,13 +168,6 @@ writeToDB PostgresStorage {dbConnection = Just connection, dbVersion, dbRevision
                    _ -> pure $ (currev, StoreFailure $ StoreError "insert returned no result or too many results, something's wrong")
              )
           `catchAny` \ex -> pure (currev, StoreFailure $ StoreError $ show ex)
-
-parseEvent ::
-  (FromJSON e) => Value -> Either String e
-parseEvent val =
-  case fromJSON val of
-    Success e -> Right e
-    Error e -> Left e
 
 readFromDB ::
   (Versionable s, MonadIO m, MonadCatch m, FromJSON s) =>

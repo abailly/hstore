@@ -11,12 +11,13 @@ import Test.QuickCheck.Monadic as Q
 prop_canLoadAllStoredEvents ::
   InMemoryStorage -> [Added] -> Property
 prop_canLoadAllStoredEvents inMem added =  monadicIO $ do
+  let f acc (Added x) = acc + x
   res <- run $ do
     _ <- store inMem 0 added
-    LoadSuccess res <- load inMem 0 (fromIntegral $ length added)
+    LoadSuccess res <- loadAll inMem 0 f
     pure res
 
-  assert $ res == added
+  assert $ res == (unadded (sum added), fromIntegral $ length added)
 
 spec :: Spec
 spec = around withMemoryStore $ describe "InMemory HStore" $ do
@@ -32,5 +33,5 @@ spec = around withMemoryStore $ describe "InMemory HStore" $ do
     StoreSuccess _ <- store s 0 ad
     let rev = fromIntegral $ length ad - 10
         off = 20
-    LoadSuccess res :: LoadResult [Added] <- load s rev off
-    length res `shouldBe` 10
+    res :: LoadResult [Added] <- load s rev off
+    length <$> res `shouldBe` LoadSuccess 10

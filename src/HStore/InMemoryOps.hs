@@ -12,6 +12,7 @@ import Data.Aeson (Result (..), Value, fromJSON, toJSON)
 import Data.Either
 import Data.Vector ((++), Vector, empty, fromList, slice, toList)
 import HStore
+import HStore.Events
 import Prelude hiding ((++))
 
 data InMemoryStorage
@@ -56,4 +57,9 @@ instance (MonadIO m) => Store m InMemoryStorage where
           [] -> LoadSuccess vals
           _ -> LoadFailure (StoreError $ "cannot decode some values " <> show (take 5 errs))
 
-  loadAll _s _initState _f = undefined
+  loadAll InMem{..} initState f = liftIO $ atomically $ do
+    vec <- readTVar cells
+    rev <- readTVar currentRevision
+    pure $ LoadSuccess (foldl impuref initState vec ,rev)
+      where
+        impuref a e = f a $ fromRight (error "this should not fail") (parseEvent e)
