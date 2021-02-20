@@ -49,7 +49,7 @@ migrations = [MigrationInitialization, createTable]
 --  server we are connecting to.
 createDatabase ::
   PGStorageOptions -> Text -> Text -> Text -> IO (MigrationResult String)
-createDatabase opts@PGStorageOptions {..} newDbName newUserName newPassword = do
+createDatabase opts newDbName newUserName newPassword = do
   let connectInfo = makeConnectInfo opts
   ( do
       connection <- connect connectInfo
