@@ -45,17 +45,16 @@ defaultSha1 :: SHA1
 defaultSha1 = SHA1 $ BS.replicate 20 0
 
 -- | A `StoredEvent` is a basic unit of storage.
-data StoredEvent a
-  = StoredEvent
-      { -- | Version of this event, useful to support migration and graceful upgrades of events
-        eventVersion :: Version,
-        -- | Timestamp for this event, a pair of (seconds,ns) since Epoch
-        eventDate :: UTCTime,
-        -- | Current source code version at time of event
-        eventSHA1 :: SHA1,
-        -- | The stored event
-        event :: a
-      }
+data StoredEvent a = StoredEvent
+  { -- | Version of this event, useful to support migration and graceful upgrades of events
+    eventVersion :: Version,
+    -- | Timestamp for this event, a pair of (seconds,ns) since Epoch
+    eventDate :: UTCTime,
+    -- | Current source code version at time of event
+    eventSHA1 :: SHA1,
+    -- | The stored event
+    event :: a
+  }
 
 instance Show s => Show (StoredEvent s) where
   show (StoredEvent v d s ev) = "StoredEvent " ++ show v ++ " " ++ show d ++ " " ++ show s ++ " " ++ show ev
@@ -118,7 +117,11 @@ instance ToField SHA1 where
   toField (SHA1 bs) = toField (Hex.encode bs)
 
 instance FromField SHA1 where
-  fromField a b = SHA1 . fst . Hex.decode <$> fromField a b
+  fromField a b = do
+    f <- fromField a b
+    case Hex.decode f of
+      Left err -> conversionError $ userError err
+      Right v -> pure $ SHA1 v
 
 instance (ToJSON e) => ToRow (StoredEvent e) where
   toRow StoredEvent {..} = toRow (eventVersion, eventDate, eventSHA1, toJSON event)
@@ -156,18 +159,20 @@ writeToDB ::
   m StoreResult
 writeToDB PostgresStorage {dbConnection = Nothing} _ _ = pure $ StoreFailure $ StoreError "no database connection"
 writeToDB PostgresStorage {dbConnection = Just connection, dbVersion, dbRevision} revision events =
-  liftIO $ modifyMVar dbRevision $
-    \currev ->
-      if revision /= currev
-        then pure (currev, StoreFailure $ InvalidRevision revision currev)
-        else ( do
-                 _numInserted <- mapM (mkEvent dbVersion) events >>= executeMany connection insertEvent
-                 rev <- query_ connection maxRevision
-                 case rev of
-                   [r] -> pure $ (r, StoreSuccess r)
-                   _ -> pure $ (currev, StoreFailure $ StoreError "insert returned no result or too many results, something's wrong")
-             )
-          `catchAny` \ex -> pure (currev, StoreFailure $ StoreError $ show ex)
+  liftIO $
+    modifyMVar dbRevision $
+      \currev ->
+        if revision /= currev
+          then pure (currev, StoreFailure $ InvalidRevision revision currev)
+          else
+            ( do
+                _numInserted <- mapM (mkEvent dbVersion) events >>= executeMany connection insertEvent
+                rev <- query_ connection maxRevision
+                case rev of
+                  [r] -> pure $ (r, StoreSuccess r)
+                  _ -> pure $ (currev, StoreFailure $ StoreError "insert returned no result or too many results, something's wrong")
+            )
+              `catchAny` \ex -> pure (currev, StoreFailure $ StoreError $ show ex)
 
 readFromDB ::
   (Versionable s, MonadIO m, MonadCatch m, FromJSON s) =>
@@ -192,22 +197,22 @@ readAllFromDB ::
   a ->
   (a -> s -> a) ->
   m (LoadResult (a, Revision))
-readAllFromDB PostgresStorage {dbConnection = Nothing} _ _  = pure $ LoadFailure $ StoreError $ "no database connection"
+readAllFromDB PostgresStorage {dbConnection = Nothing} _ _ = pure $ LoadFailure $ StoreError $ "no database connection"
 readAllFromDB PostgresStorage {dbConnection = Just connection, dbRevision} initial f =
-  liftIO $ modifyMVar dbRevision $
-  \currev ->
-    ( do
-        st <- liftIO (fold_ connection selectAllEvents initial impuref )
-        rev <- query_ connection maxRevision
-        case rev of
-          [r] -> pure $ (r, LoadSuccess (st, r))
-          _ -> pure $ (currev, LoadFailure $ StoreError "insert returned no result or too many results, something's wrong")
-    )
-    `catchAny` \ex -> pure (currev, LoadFailure $ StoreError $ show ex)
+  liftIO $
+    modifyMVar dbRevision $
+      \currev ->
+        ( do
+            st <- liftIO (fold_ connection selectAllEvents initial impuref)
+            rev <- query_ connection maxRevision
+            case rev of
+              [r] -> pure $ (r, LoadSuccess (st, r))
+              _ -> pure $ (currev, LoadFailure $ StoreError "insert returned no result or too many results, something's wrong")
+        )
+          `catchAny` \ex -> pure (currev, LoadFailure $ StoreError $ show ex)
   where
     impuref :: a -> StoredEvent Value -> IO a
     impuref a e = pure $ either (const a) (f a) (parseEvent $ event e)
-
 
 instance (MonadIO m, MonadCatch m) => Store m PostgresStorage where
   store = writeToDB
